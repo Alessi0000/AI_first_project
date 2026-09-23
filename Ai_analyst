@@ -1,0 +1,161 @@
+import pandas as pd
+from apicode import API_KEY
+from google import genai
+from google.genai import types
+
+
+client = genai.Client(api_key=API_KEY)
+
+
+def create_sample_data():
+    """Create a sample sales CSV for analysis."""
+    data = {
+        'data': [
+            '2024-01-15', '2024-01-22', '2024-02-03', '2024-02-18',
+            '2024-03-05', '2024-03-12', '2024-03-28', '2024-04-02',
+            '2024-04-15', '2024-04-22', '2024-05-01', '2024-05-18',
+            '2024-06-03', '2024-06-15', '2024-06-28', '2024-07-05',
+            '2024-07-12', '2024-07-25', '2024-08-02', '2024-08-18',
+        ],
+        'prodotto': [
+            'Laptop', 'Mouse', 'Tastiera', 'Monitor', 'Laptop',
+            'Cuffie', 'Mouse', 'Laptop', 'Monitor', 'Tastiera',
+            'Cuffie', 'Laptop', 'Mouse', 'Monitor', 'Laptop',
+            'Tastiera', 'Cuffie', 'Laptop', 'Mouse', 'Monitor',
+        ],
+                'quantita': [
+            2, 15, 8, 3, 4, 10, 20, 1, 5, 12,
+            7, 3, 18, 2, 5, 9, 15, 2, 22, 4,
+        ],
+        'prezzo_unitario': [
+            999.99, 29.99, 79.99, 349.99, 999.99,
+            59.99, 29.99, 1299.99, 349.99, 79.99,
+            59.99, 999.99, 29.99, 449.99, 999.99,
+            79.99, 59.99, 1299.99, 29.99, 349.99,
+        ],
+    }
+    df = pd.DataFrame(data)
+    df["ricavo"] = df["quantita"] * df["prezzo_unitario"]
+    df['mese'] = pd.to_datetime(df['data']).dt.month_name()
+    df.to_csv("vendite.csv", index=False)
+    print('File vendite.csv creato con successo!')
+    return df
+
+
+def load_and_analyze(filepath):
+    """Load CSV and generate structured statistics."""
+    df = pd.read_csv(filepath)
+
+    # Overall numeric summary
+    stats = df.describe().to_string()
+
+    # Revenue ranked by product
+    top_products = (
+        df.groupby('prodotto')['ricavo']
+        .sum()
+        .sort_values(ascending=False)
+        .head(5)
+        .to_string()
+    )
+
+    # Revenue ranked by month
+    monthly_trend = (
+        df.groupby('mese')['ricavo']
+        .sum()
+        .sort_values(ascending=False)
+        .to_string()
+    )
+
+    return df, stats, top_products, monthly_trend
+
+def build_prompt(stats, top_products, monthly_trend):
+    """Build a structured analysis prompt."""
+    prompt = f"""Sei un analista dati esperto. Analizza questi dati di vendita e fornisci insights utili e concreti.
+
+STATISTICHE GENERALI:
+{stats}
+
+TOP PRODOTTI PER RICAVO TOTALE:
+{top_products}
+
+RICAVI PER MESE:
+{monthly_trend}
+
+Basandoti su questi dati, fornisci:
+1. I 3 pattern piu importanti che noti
+2. Un possibile problema da investigare
+3. Una raccomandazione concreta per il business
+"""
+    return prompt
+
+
+def ask_gemini(contents):
+    response = client.models.generate_content(
+        model='gemini-3.6-flash',
+        contents= contents,
+        config=types.GenerateContentConfig(
+            temperature=0.3,
+            max_output_tokens=10000,
+        )
+    )
+    return response.text
+
+def interactive_conversation(initial_analysis, stats, top_products, monthly_trend):
+    """Allow follow-up questions about the data."""
+    context = f"""Contesto: hai appena analizzato dei dati di vendita.
+La tua analisi precedente:
+{initial_analysis}
+
+Dati di riferimento:
+{stats}
+
+Top prodotti: {top_products}
+Trend mensile: {monthly_trend}
+"""
+
+    history = [context]
+
+    print('\n=== MODALITA INTERATTIVA ===')
+    print("Fai domande sui dati. Scrivi 'esci' per uscire.\n")
+
+    while True:
+        question = input('Tu: ')
+        if question.lower() == 'esci':
+            print('\nGrazie per aver usato AI Data Analyst!')
+            break
+
+        history.append(f'Domanda: {question}')
+        full_prompt = '\n'.join(history) + '\n\nRispondi alla domanda in modo specifico basandoti sui dati.'
+
+        answer = ask_gemini(full_prompt)
+        print(f'\nAI: {answer}\n')
+        history.append(f'Risposta: {answer}')
+
+def main():
+    print('=== AI DATA ANALYST ===\n')
+
+    # Create sample data
+    create_sample_data()
+
+    # Load and analyze
+    df, stats, top_products, monthly_trend = load_and_analyze('vendite.csv')
+
+    # Build prompt and get AI analysis
+    prompt = build_prompt(stats, top_products, monthly_trend)
+    print('\nAnalisi in corso...\n')
+    analysis = ask_gemini(prompt)
+
+    print('=== ANALISI AI DEI DATI DI VENDITA ===\n')
+    print(analysis)
+
+    interactive_conversation(analysis, stats, top_products, monthly_trend)
+
+
+if __name__ == '__main__':
+    main()
+
+
+
+
+
+
